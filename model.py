@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import math
 from collections import Counter
 
-import scipy.stats as ss
+#import scipy.stats as ss
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.preprocessing import LabelEncoder,OneHotEncoder
@@ -20,6 +20,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression,LogisticRegression
 from sklearn.metrics import r2_score,mean_squared_error
 from sklearn.ensemble import GradientBoostingRegressor
+import xgboost as xgb
 
 from sklearn.pipeline import Pipeline
 from joblib import dump,load
@@ -110,9 +111,13 @@ def dataprocess(LotFrontage,LotArea,BsmtFinSF1,BsmtFinSF2,BsmtUnfSF,\
     train_test['Flr_diff'] = abs(train_test['1stFlrSF'] - train_test['2ndFlrSF'])
     train_test['FullBathNum'] = train_test['BsmtFullBath'] + train_test['FullBath']
     train_test['HalfBathNum'] = train_test['BsmtHalfBath'] + train_test['HalfBath']
-    train_test['TimeSold'] = train_test['YrSold'] + train_test['MoSold']
+    train_test['DySold'] = pd.Series(np.zeros((1,train_test.shape[0]))[0]+1).astype(int)
+    train_test['TimeSold'] = train_test['YrSold'].astype(str) +'/'+ train_test['MoSold'].astype(str) +'/'+ train_test['DySold'].astype(str)
+    train_test['TimeSold'] = pd.to_datetime(train_test['TimeSold'],format='%Y/%m/%d')
+    train_test['TimeSold'] = pd.cut(train_test['TimeSold'],20,labels=list(range(20))).astype(int)
+    
     #drop useless features
-    train_test = train_test.drop(['Id','Alley','Utilities','YrSold','MoSold','most_count'],axis=1)
+    train_test = train_test.drop(['Id','Alley','Utilities','YrSold','MoSold','DySold','most_count'],axis=1)
 #    print(train_test)
     ''' scaling/encoder/lower decomposition'''
     # 'Condition1','Condition2','Exterior1st','Exterior2nd','OverallQual','OverallCond',\
@@ -161,7 +166,10 @@ def dataprocess(LotFrontage,LotArea,BsmtFinSF1,BsmtFinSF2,BsmtUnfSF,\
             train_test[num_lst_col[i]] = StandardScaler().fit_transform(train_test[num_lst_col[i]].values.reshape(-1,1))
     for i in range(len(type_lst_col)):
         if not type_lst[i]:
-            train_test[type_lst_col[i]] = LabelEncoder().fit_transform(train_test[type_lst_col[i]])
+            if type_lst_col[i] in set(seq_lst_col):
+                train_test[type_lst_col[i]] = seq_map(train_test[type_lst_col[i]])
+            else:
+                train_test[type_lst_col[i]] = LabelEncoder().fit_transform(train_test[type_lst_col[i]])
             train_test[type_lst_col[i]] = StandardScaler().fit_transform(train_test[type_lst_col[i]].values.reshape(-1,1))
         else:
             train_test = pd.get_dummies(train_test,columns=[type_lst_col[i]])
@@ -179,7 +187,17 @@ def modeling(features,labels):
     models=[]
     models.append(('LinearRegression',LinearRegression()))
     models.append(('LogisticRegression',LogisticRegression()))
-    models.append(('GBR',GradientBoostingRegressor(n_estimators=100,learning_rate=0.1,max_depth=6)))
+    models.append(('GBR',GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,\
+                                                   max_depth=4, max_features='sqrt',\
+                                                   min_samples_leaf=15, min_samples_split=10, \
+                                                   loss='huber', random_state =5)))
+    
+    models.append(('XGBR',xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
+                                           learning_rate=0.05, max_depth=3,\
+                                           min_child_weight=1.7817, n_estimators=2200,\
+                                           reg_alpha=0.4640, reg_lambda=0.8571,\
+                                           subsample=0.5213, silent=1,\
+                                           nthread = -1)))
     
     for rgname,rg in models:
         rg.fit(X_train,Y_train)
@@ -218,7 +236,45 @@ def related_fillna(df_nan,relate_lst,col_nan):
             return df_nan
     except:
         print('datatype error')
-    
+        
+LotShape_d = dict([('Reg',0),('IR1',1),('IR2',2),('IR3',3)])
+LandContour_d = dict([('Lvl',0),('Bnk',1),('HLS',2),('Low',3)])
+LandSlope_d = dict([('Gtl',0),('Mod',1),('Sev',2)])
+ExterQual_d = dict([('Po',2),('Fa',4),('TA',6),('Gd',8),('Ex',10)])
+ExterCond_d = ExterQual_d
+BsmtQual_d = dict([('None',0),('Po',2),('Fa',4),('TA',6),('Gd',8),('Ex',10)])
+BsmtCond_d = BsmtQual_d
+BsmtExposure_d = dict([('None',0),('No',1),('Mn',2),('Av',3),('Gd',4)])
+BsmtFinType1_d = dict([('None',0),('Unf',1),('LwQ',2),('Rec',3),('BLQ',4),('ALQ',5),('GLQ',6)])
+BsmtFinType2_d = BsmtFinType1_d
+HeatingQC_d = BsmtQual_d
+Electrical_d = dict([('Mix',0),('FuseP',1),('FuseF',2),('FuseA',3),('SBrkr',4)])
+KitchenQual_d = BsmtQual_d
+FireplaceQu_d = BsmtQual_d
+GarageFinish_d = dict([('None',0),('Unf',1),('RFn',2),('Fin',3)])
+GarageQual_d = BsmtQual_d
+GarageCond_d = BsmtQual_d
+PoolQC_d = BsmtQual_d
+OverallQual_d = dict([(1,0),(2,1),(3,2),(4,3),(5,4),(6,5),(7,6),(8,7),(9,8),(10,9)])
+OverallCond_d = OverallQual_d
+
+
+labelmap_lst = [('LotShape',LotShape_d),('LandContour',LandContour_d),\
+                ('LandSlope',LandSlope_d),('ExterQual',ExterQual_d),\
+                ('ExterCond',ExterCond_d),('BsmtQual',BsmtQual_d),\
+                ('BsmtCond',BsmtCond_d),('BsmtExposure',BsmtExposure_d),\
+                ('BsmtFinType1',BsmtFinType1_d),('BsmtFinType2',BsmtFinType2_d),\
+                ('HeatingQC',HeatingQC_d),('Electrical',Electrical_d),\
+                ('KitchenQual',KitchenQual_d),('FireplaceQu',FireplaceQu_d),\
+                ('GarageFinish',GarageFinish_d),('GarageQual',GarageQual_d),\
+                ('GarageCond',GarageCond_d),('PoolQC',PoolQC_d),\
+                ('OverallQual',OverallQual_d),('OverallCond',OverallCond_d)]
+#s:pd.Series
+def seq_map(s):
+    for p,q in labelmap_lst:
+        if s.name == p:
+            return s.apply(lambda x: q[x])
+
 def main():
     features,labels = dataprocess(LotFrontage=True,LotArea=True,BsmtFinSF1=True,BsmtFinSF2=True,BsmtUnfSF=True,\
                 TotalBsmtSF=True,FlrSF1st=True,FlrSF2nd=True,LowQualFinSF=True,GrLivArea=True,\
@@ -243,6 +299,7 @@ def main():
     testset_df = pd.DataFrame(testset)
     testset_df.to_csv('./testset.csv',index=False)
     modeling(trainset_X,trainset_Y)
+
 #    print(features,labels)
 if __name__ == '__main__':
     main()
