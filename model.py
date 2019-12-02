@@ -11,6 +11,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import math
 from collections import Counter
+import time
+
+from sklearn.model_selection import GridSearchCV
 
 #import scipy.stats as ss
 from sklearn.model_selection import train_test_split
@@ -178,41 +181,49 @@ def dataprocess(LotFrontage,LotArea,BsmtFinSF1,BsmtFinSF2,BsmtUnfSF,\
         features = mypca.fit_transform(train_test.values)
         print(mypca.explained_variance_ratio_)
         return features,train_labels
-    return train_test,train_labels
+    return train_test.values,train_labels
 
 def modeling(features,labels):
     X_tt,X_val,Y_tt,Y_val = train_test_split(features,labels,test_size=0.2)
     X_train,X_test,Y_train,Y_test = train_test_split(X_tt,Y_tt,test_size=0.2)
-    
+    starttime = time.time()
     models=[]
-    models.append(('LinearRegression',LinearRegression()))
-    models.append(('LogisticRegression',LogisticRegression()))
-    models.append(('GBR',GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,\
-                                                   max_depth=4, max_features='sqrt',\
-                                                   min_samples_leaf=15, min_samples_split=10, \
-                                                   loss='huber', random_state =5)))
+    models.append(('LinearRegression',LinearRegression(),None))
+    models.append(('LogisticRegression',LogisticRegression(),None))
+    models.append(('GBR',GradientBoostingRegressor(),{
+            'loss':['huber'],
+            'learning_rate':[0.05],
+            'n_estimators':range(3000,10000,1000),
+            'min_samples_split':range(2,11,1),
+            'min_samples_leaf':range(1,16,1),
+            'max_depth':range(4,11,1),
+            'max_features':['sqrt']
+            }))
+    models.append(('XGBR',xgb.XGBRegressor(),None))
     
-    models.append(('XGBR',xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
-                                           learning_rate=0.05, max_depth=3,\
-                                           min_child_weight=1.7817, n_estimators=2200,\
-                                           reg_alpha=0.4640, reg_lambda=0.8571,\
-                                           subsample=0.5213, silent=1,\
-                                           nthread = -1)))
-    
-    for rgname,rg in models:
-        rg.fit(X_train,Y_train)
+    for rgname,rg,para in models:
         xy_lst = [(X_train,Y_train),(X_test,Y_test),(X_val,Y_val)]
-        
-        for i in range(len(xy_lst)):
-            x_part = xy_lst[i][0]
-            y_part = xy_lst[i][1]
-            Y_pred = rg.predict(x_part)
-            print(i)
-            print(rgname,'r2',r2_score(y_part,Y_pred))
-            print(rgname,'MSE',mean_squared_error(y_part,Y_pred))
+        if para:
+            grid = GridSearchCV(rg,para,cv=3,scoring='r2',n_jobs =3)
+            grid.fit(X_train,Y_train)
+            rg = grid.best_estimator_
+            print(grid.best_params_)
+            rg.fit(X_train,Y_train)
+        else:
+            rg.fit(X_train,Y_train)
             
-            dump(rg,'%s.joblib'%rgname)
-            
+            for i in range(len(xy_lst)):
+                x_part = xy_lst[i][0]
+                y_part = xy_lst[i][1]
+                Y_pred = rg.predict(x_part)
+                print(i)
+                print(rgname,'r2',r2_score(y_part,Y_pred))
+                print(rgname,'MSE',mean_squared_error(y_part,Y_pred))
+                
+                dump(rg,'%s.joblib'%rgname)
+    endtime = time.time()
+    print(endtime-starttime)
+    
 def related_fillna(df_nan,relate_lst,col_nan):
     try:
         if df_nan[col_nan].dtype == 'int' or df_nan[col_nan].dtype == 'float':
@@ -292,7 +303,7 @@ def main():
                 ExterQual=False,ExterCond=False,BsmtQual=False,BsmtCond=False,BsmtExposure=False,\
                 BsmtFinType1=False,BsmtFinType2=False,HeatingQC=False,Electrical=False,KitchenQual=False,\
                 FireplaceQu=False,GarageFinish=False,GarageQual=False,GarageCond=False,PoolQC=False,\
-                SaleType=False,SaleCondition=False,lower_d=True,ld_n=20)
+                SaleType=True,SaleCondition=True,lower_d=False,ld_n=20)
     trainset_X = features[:1460,:]
     trainset_Y = labels.values.reshape(-1,1)
     testset = features[1460:,:]
