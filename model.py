@@ -14,6 +14,7 @@ from collections import Counter
 import time
 
 from sklearn.model_selection import GridSearchCV
+from sklearn.covariance import EllipticEnvelope
 
 #import scipy.stats as ss
 from sklearn.model_selection import train_test_split
@@ -50,6 +51,7 @@ def dataprocess(LotFrontage,LotArea,BsmtFinSF1,BsmtFinSF2,BsmtUnfSF,\
                 FireplaceQu,GarageFinish,GarageQual,GarageCond,PoolQC,SaleType,\
                 SaleCondition,lower_d,ld_n):
     train = pd.read_csv('./train.csv')
+    train = remove_outlier(train)
     test = pd.read_csv('./test.csv')
     train_labels = train['SalePrice']
     train = train.drop(['SalePrice'],axis = 1)
@@ -217,22 +219,22 @@ def modeling(features,labels):
                               bagging_freq = 5, feature_fraction = 0.2319,\
                               feature_fraction_seed=9, bagging_seed=9,\
                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11),None))
-#    models.append(('Stacking_Model',StackingModel(n_cross=3,prilearner_lst=\
-#        [GradientBoostingRegressor(learning_rate=0.05,\
-#        loss='huber',max_depth=8, max_features='sqrt',\
-#        min_samples_leaf=10, min_samples_split=9, n_estimators=9000),\
-#        lgb.LGBMRegressor(objective='regression',num_leaves=5,\
-#                              learning_rate=0.05, n_estimators=720,\
-#                              max_bin = 55, bagging_fraction = 0.8,\
-#                              bagging_freq = 5, feature_fraction = 0.2319,\
-#                              feature_fraction_seed=9, bagging_seed=9,\
-#                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11),\
-#        xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
-#                             learning_rate=0.05, max_depth=3, \
-#                             min_child_weight=1.7817, n_estimators=2200,\
-#                             reg_alpha=0.4640, reg_lambda=0.8571,\
-#                             subsample=0.5213, silent=1,\
-#                             random_state =7, nthread = -1)]),None))
+    models.append(('Stacking_Model',StackingModel(n_cross=3,prilearner_lst=\
+        [GradientBoostingRegressor(learning_rate=0.05,\
+        loss='huber',max_depth=8, max_features='sqrt',\
+        min_samples_leaf=10, min_samples_split=9, n_estimators=9000),\
+        lgb.LGBMRegressor(objective='regression',num_leaves=5,\
+                              learning_rate=0.05, n_estimators=720,\
+                              max_bin = 55, bagging_fraction = 0.8,\
+                              bagging_freq = 5, feature_fraction = 0.2319,\
+                              feature_fraction_seed=9, bagging_seed=9,\
+                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11),\
+        xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
+                             learning_rate=0.05, max_depth=3, \
+                             min_child_weight=1.7817, n_estimators=2200,\
+                             reg_alpha=0.4640, reg_lambda=0.8571,\
+                             subsample=0.5213, silent=1,\
+                             random_state =7, nthread = -1)]),None))
     for rgname,rg,para in models:
         xy_lst = [(X_train,Y_train),(X_test,Y_test),(X_val,Y_val)]
         if para:
@@ -317,6 +319,46 @@ def seq_map(s):
     for p,q in labelmap_lst:
         if s.name == p:
             return s.apply(lambda x: q[x])
+#x:pd.DataFrame      
+#def remove_outlier(x):
+#    lst = list(x.columns)
+#    lst.remove('Id')
+#    lst.remove('MSSubClass')
+#    lst.remove('OverallQual')
+#    lst.remove('OverallCond')
+#    lst.remove('YrSold')
+#    lst.remove('MoSold')
+#    
+#    for i in lst:
+#        if x[i].dtype == 'int64' or x[i].dtype == 'float64':
+#            low_q = x[i].quantile(0.01)
+#            high_q = x[i].quantile(0.99)
+#            mid = high_q-low_q
+#            k = 6
+#            x = x[x[i]<high_q+k*mid][x[i]>low_q-k*mid]
+#    return x
+
+#x:pd.DataFrame           
+def remove_outlier(x):
+    lst = []
+    lst1 = list(x.columns)
+    lst1.remove('Id')
+    lst1.remove('MSSubClass')
+    lst1.remove('OverallQual')
+    lst1.remove('OverallCond')
+    lst1.remove('YrSold')
+    lst1.remove('MoSold')
+    for i in lst1:
+        if x[i].dtype == 'int64' or x[i].dtype == 'float64':
+            lst.append(i)
+    y = x.loc[:,lst]
+    y = y.fillna(method='ffill')
+    outlearner = EllipticEnvelope(contamination=0.02)
+    y_pred = outlearner.fit(y).predict(y)
+    x['order'] = y_pred
+    x = x.loc[x['order'] != -1,:]
+    x = x.drop(['order'],axis=1).reset_index(drop=True)
+    return x
 
 def main():
     features,labels = dataprocess(LotFrontage=True,LotArea=True,BsmtFinSF1=True,BsmtFinSF2=True,BsmtUnfSF=True,\
@@ -336,9 +378,9 @@ def main():
                 BsmtFinType1=False,BsmtFinType2=False,HeatingQC=False,Electrical=False,KitchenQual=False,\
                 FireplaceQu=False,GarageFinish=False,GarageQual=False,GarageCond=False,PoolQC=False,\
                 SaleType=True,SaleCondition=True,lower_d=False,ld_n=20)
-    trainset_X = features[:1460,:]
+    trainset_X = features[:1430,:]
     trainset_Y = labels.values.reshape(-1,1)
-    testset = features[1460:,:]
+    testset = features[1430:,:]
     testset_df = pd.DataFrame(testset)
     testset_df.to_csv('./testset.csv',index=False)
     modeling(trainset_X,trainset_Y)
