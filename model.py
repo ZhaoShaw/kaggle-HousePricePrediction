@@ -20,12 +20,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.preprocessing import LabelEncoder,OneHotEncoder
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LinearRegression,LogisticRegression
+from sklearn.linear_model import LinearRegression,LogisticRegression,Lasso,ElasticNet,BayesianRidge,LassoLarsIC
 from sklearn.metrics import r2_score,mean_squared_error
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor,RandomForestRegressor
+from sklearn.kernel_ridge import KernelRidge
+from sklearn import svm
 import xgboost as xgb
+import lightgbm as lgb
 
-from sklearn.pipeline import Pipeline
+from Stacking_Model import StackingModel
+
 from joblib import dump,load
 
 def dataprocess(LotFrontage,LotArea,BsmtFinSF1,BsmtFinSF2,BsmtUnfSF,\
@@ -190,17 +194,45 @@ def modeling(features,labels):
     models=[]
     models.append(('LinearRegression',LinearRegression(),None))
     models.append(('LogisticRegression',LogisticRegression(),None))
-    models.append(('GBR',GradientBoostingRegressor(),{
-            'loss':['huber'],
-            'learning_rate':[0.05],
-            'n_estimators':range(3000,10000,1000),
-            'min_samples_split':range(2,11,1),
-            'min_samples_leaf':range(1,16,1),
-            'max_depth':range(4,11,1),
-            'max_features':['sqrt']
-            }))
-    models.append(('XGBR',xgb.XGBRegressor(),None))
-    
+    models.append(('GBR',GradientBoostingRegressor(learning_rate=0.05,\
+                                                   loss='huber', \
+                                                   max_depth=8, \
+                                                   max_features='sqrt',\
+                                                   min_samples_leaf=10, \
+                                                   min_samples_split=9, \
+                                                   n_estimators=9000),None))
+    models.append(('XGBR',xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
+                             learning_rate=0.05, max_depth=3, \
+                             min_child_weight=1.7817, n_estimators=2200,\
+                             reg_alpha=0.4640, reg_lambda=0.8571,\
+                             subsample=0.5213, silent=1,\
+                             random_state =7, nthread = -1),None))
+    models.append(('SVM',svm.SVR(C=1000000),None))
+    models.append(('Lasso',Lasso(alpha =0.0005, random_state=1),None))
+    models.append(('ElasticNet',ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3),None))
+    models.append(('KRR',KernelRidge(alpha=0.6, kernel='polynomial', degree=2, coef0=2.5),None))
+    models.append(('LGB',lgb.LGBMRegressor(objective='regression',num_leaves=5,\
+                              learning_rate=0.05, n_estimators=720,\
+                              max_bin = 55, bagging_fraction = 0.8,\
+                              bagging_freq = 5, feature_fraction = 0.2319,\
+                              feature_fraction_seed=9, bagging_seed=9,\
+                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11),None))
+#    models.append(('Stacking_Model',StackingModel(n_cross=3,prilearner_lst=\
+#        [GradientBoostingRegressor(learning_rate=0.05,\
+#        loss='huber',max_depth=8, max_features='sqrt',\
+#        min_samples_leaf=10, min_samples_split=9, n_estimators=9000),\
+#        lgb.LGBMRegressor(objective='regression',num_leaves=5,\
+#                              learning_rate=0.05, n_estimators=720,\
+#                              max_bin = 55, bagging_fraction = 0.8,\
+#                              bagging_freq = 5, feature_fraction = 0.2319,\
+#                              feature_fraction_seed=9, bagging_seed=9,\
+#                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11),\
+#        xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,\
+#                             learning_rate=0.05, max_depth=3, \
+#                             min_child_weight=1.7817, n_estimators=2200,\
+#                             reg_alpha=0.4640, reg_lambda=0.8571,\
+#                             subsample=0.5213, silent=1,\
+#                             random_state =7, nthread = -1)]),None))
     for rgname,rg,para in models:
         xy_lst = [(X_train,Y_train),(X_test,Y_test),(X_val,Y_val)]
         if para:

@@ -9,7 +9,7 @@ import pandas as pd
 from joblib import dump,load
 
 def pred(feature):
-    rg = load('./GBR.joblib')
+    rg = load('./Stacking_Model.joblib')
     Y_pred = rg.predict(feature)
     return Y_pred
 def main():
